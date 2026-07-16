@@ -25,7 +25,7 @@ from urllib.parse import urljoin
 import feedparser
 import requests as std_requests
 
-RSS_URL = "https://www.salute.gov.it/portale/news/RSS_avvisi_richiami_osa.xml"
+RSS_URL = "https://www.salute.gov.it/new/rss/RSS_avvisi_sicurezza_alimentare.xml"
 STATE_FILE = os.path.join(os.path.dirname(__file__), "seen.json")
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
