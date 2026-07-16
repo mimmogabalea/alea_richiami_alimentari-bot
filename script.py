@@ -131,7 +131,13 @@ def main():
               "Vedi il README per l'opzione Playwright.")
         sys.exit(1)
 
+    print(f"  DEBUG status={resp.status_code} content-type={resp.headers.get('Content-Type')} "
+          f"lunghezza={len(resp.content)} bytes")
+    print(f"  DEBUG primi 500 caratteri della risposta:\n{resp.text[:500]!r}")
+
     feed = feedparser.parse(resp.content)
+    if feed.bozo:
+        print(f"  DEBUG feedparser ha segnalato un problema di parsing: {feed.bozo_exception}")
     print(f"Trovate {len(feed.entries)} voci nel feed.")
 
     new_items = [e for e in feed.entries if e.get("id", e.link) not in seen]
@@ -191,3 +197,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    "debug" 
