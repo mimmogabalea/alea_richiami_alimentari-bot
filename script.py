@@ -9,12 +9,10 @@ Cosa fa:
 5. Aggiorna seen.json (il workflow di GitHub Actions lo ricommitta nel repo).
 
 Nota tecnica:
-Il sito salute.gov.it è protetto da un sistema anti-bot che richiede
-JavaScript. Per questo motivo ogni richiesta passa prima da un client HTTP
-"normale" e, se bloccata, da un client che imita l'impronta TLS di un
-browser reale (curl_cffi). Se anche questo dovesse smettere di funzionare,
-il passo successivo è passare a un browser headless (Playwright) - vedi
-il README.
+Il sito salute.gov.it blocca le richieste dirette provenienti da GitHub
+Actions (blocco per reputazione dell'IP). Per questo passiamo attraverso
+ScraperAPI, che fa la richiesta da un altro indirizzo IP e ci restituisce
+il contenuto.
 """
 
 import os
@@ -26,22 +24,15 @@ from urllib.parse import urljoin
 
 import feedparser
 import requests as std_requests
-from curl_cffi import requests as cffi_requests
 
 RSS_URL = "https://www.salute.gov.it/portale/news/RSS_avvisi_richiami_osa.xml"
 STATE_FILE = os.path.join(os.path.dirname(__file__), "seen.json")
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+SCRAPERAPI_KEY = os.environ.get("SCRAPERAPI_KEY")
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-}
+SCRAPERAPI_ENDPOINT = "https://api.scraperapi.com/"
 
 BLOCK_MARKERS = ("Please Enable JavaScript", "Please Enable Cookies", "Site verification")
 
@@ -50,22 +41,27 @@ def _looks_blocked(text: str) -> bool:
     return any(marker in text for marker in BLOCK_MARKERS)
 
 
-def fetch(url: str, binary: bool = False):
-    """Prova prima una richiesta normale, poi una che imita un browser reale."""
-    try:
-        r = std_requests.get(url, headers=HEADERS, timeout=30)
-        content_check = r.text if not binary else ""
-        if r.status_code == 200 and not _looks_blocked(content_check):
-            return r
-    except Exception as e:
-        print(f"  richiesta normale fallita ({e}), provo il fallback...")
+def fetch(url: str, binary: bool = False, render: bool = False):
+    """
+    Recupera una pagina passando attraverso ScraperAPI, perché il sito del
+    Ministero blocca le richieste dirette provenienti dai server di GitHub
+    Actions (blocco per reputazione dell'IP, non solo anti-bot via JS).
+    """
+    if not SCRAPERAPI_KEY:
+        raise RuntimeError("SCRAPERAPI_KEY non impostata: aggiungi il secret su GitHub.")
 
-    try:
-        r = cffi_requests.get(url, headers=HEADERS, impersonate="chrome124", timeout=30)
-        return r
-    except Exception as e:
-        print(f"  anche il fallback e' fallito: {e}")
-        raise
+    params = {"api_key": SCRAPERAPI_KEY, "url": url}
+    if render:
+        params["render"] = "true"
+
+    r = std_requests.get(SCRAPERAPI_ENDPOINT, params=params, timeout=90)
+
+    if r.status_code == 200 and not binary and _looks_blocked(r.text) and not render:
+        # Riprova chiedendo a ScraperAPI di eseguire il rendering JavaScript
+        print("  risposta bloccata, riprovo con il rendering JavaScript...")
+        return fetch(url, binary=binary, render=True)
+
+    return r
 
 
 def load_seen() -> set:
@@ -127,8 +123,7 @@ def main():
         print(f"Errore nel recupero dell'RSS: HTTP {resp.status_code}")
         sys.exit(1)
     if _looks_blocked(resp.text):
-        print("Il sito ha bloccato anche il fallback (protezione anti-bot). "
-              "Vedi il README per l'opzione Playwright.")
+        print("Il sito ha bloccato anche ScraperAPI. Serve indagare ulteriormente.")
         sys.exit(1)
 
     print(f"  DEBUG status={resp.status_code} content-type={resp.headers.get('Content-Type')} "
