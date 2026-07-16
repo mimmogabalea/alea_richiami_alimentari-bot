@@ -2,12 +2,11 @@ name: Controllo richiami alimentari
 
 on:
   schedule:
-    # Ogni giorno alle 7:00 UTC (8:00 o 9:00 in Italia, a seconda dell'ora legale)
     - cron: "0 7 * * *"
-  workflow_dispatch: {}  # permette anche l'avvio manuale da GitHub
+  workflow_dispatch: {}
 
 permissions:
-  contents: write  # necessario per ricommittare seen.json
+  contents: write
 
 jobs:
   check:
@@ -28,6 +27,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
         run: python script.py
 
       - name: Salva lo stato aggiornato nel repo
